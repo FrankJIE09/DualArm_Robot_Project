@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/software/motion_control/hand_on_eye" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/software/motion_control/jodell_gripper" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/software/speech/ChatTTS/ChatTTS" vcs="Git" />
+  </component>
+</project>
