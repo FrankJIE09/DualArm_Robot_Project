@@ -1,8 +1,8 @@
 import yaml
 import time
 from dazu.CPS import CPSClient  # 假设有一个机器人控制的库
-from realsense_camera import RealSenseCamera  # Realsense 相机类
-from DaHuanFingerControl.PGE.ControlGripper import SetCommand  # 手爪控制类
+from software.vision.realsense_camera import RealSenseCamera  # Realsense 相机类
+from jodell_gripper.RG.rg_api import ClawOperation  # 手爪控制类
 from ultralytics import YOLO  # YOLO 检测库
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -40,7 +40,7 @@ class RobotController:
         # 读取标定信息
         self.calibration_data = self.read_calibration()
         # 初始化手爪控制
-        self.gripper = SetCommand()
+        self.gripper = ClawOperation()
         # self.gripper.initialize_gripper()  # 初始化手爪
 
         # 初始化 YOLO 模型
@@ -49,8 +49,8 @@ class RobotController:
 
         # 设置置信度阈值
         self.conf_threshold = conf_threshold
-        self.gripper.set_force(40)
-        self.gripper.set_position(1000, blocking=False)  # 夹持物体
+        self.gripper.enable_claw(claw_id=9, enable=True)
+        self.gripper.run_with_param(claw_id=9, force=255, speed=255, position=255)
         self._stop_event = threading.Event()
 
     def read_calibration(self, tag="hand_eye_transformation_matrix"):
@@ -261,7 +261,7 @@ class RobotController:
         # 控制手爪抓取物体
         print("Closing gripper to grab the object...")
         # self.gripper.set_force(50)  # 设置夹持力
-        self.gripper.set_position(0, blocking=False)  # 夹持物体
+        self.gripper.run_with_param(claw_id=9, force=255, speed=255, position=0)
         time.sleep(1)
 
         # 抓取完成后升高100mm
@@ -274,7 +274,7 @@ class RobotController:
     def release_object(self):
         """释放物体"""
         print("Opening gripper to release the object...")
-        self.gripper.set_position(1000, blocking=True)  # 打开手爪释放物体
+        self.gripper.run_with_param(claw_id=9, force=255, speed=255, position=255)
 
     def pre_execute(self):
         if self.current_pose[2] < 450:
@@ -376,7 +376,7 @@ class RobotController:
         y_height = 400  # Height at which the robot end-effector will move along the circle
 
         # Call draw_circle function to make the robot draw the circle
-        self.gripper.set_position(10, blocking=False)
+        self.gripper.run_with_param(claw_id=9, force=255, speed=255, position=5)
         self.draw_circle(boxID, rbtID, center, radius, y_height, num_points=36)
 
     def pre_greet(self):
@@ -401,9 +401,9 @@ class RobotController:
 
     def story(self):
         while not self._stop_event.is_set():
-            random_position = random.randint(100, 1000)  # 生成100到1000之间的随机位置
-            self.gripper.set_position(random_position, blocking=True)  # 设置随机位置并等待到达
-        self.gripper.set_position(1000, blocking=True)  # 设置随机位置并等待到达
+            random_position = random.randint(0, 255)  # 生成100到1000之间的随机位置
+            self.gripper.run_with_param(claw_id=9, force=255, speed=255, position=random_position)  # 设置随机位置并等待到达
+        self.gripper.run_with_param(claw_id=9, force=255, speed=255, position=255)  # 设置随机位置并等待到达
         self._stop_event.clear()
 
     def stop_story(self):
@@ -440,4 +440,3 @@ def greet_():
 if __name__ == "__main__":
     main()
     # greet_()
-
