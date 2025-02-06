@@ -6,10 +6,8 @@ import yaml
 import json
 
 
-
-
 class RealSenseCamera:
-    def __init__(self, config_extrinsic='./config/hand_eye_config.yaml',
+    def __init__(self, config_extrinsic='./hand_on_eye/config/config.yaml',
                  ):
         # 将配置项移动到实例变量中
 
@@ -18,6 +16,7 @@ class RealSenseCamera:
         self.resolution_width = 1280
         self.resolution_height = 720
         self.frame_rate = 30
+
         self.depth_min = 0.1
         self.depth_max = 10.0
 

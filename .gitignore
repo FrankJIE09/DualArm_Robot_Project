@@ -170,3 +170,5 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 software/speech/ChatTTS/voice_pth/*
+/software/speech/ChatTTS/voice_pth/
+/software/speech/ChatTTS/voice_wavs/

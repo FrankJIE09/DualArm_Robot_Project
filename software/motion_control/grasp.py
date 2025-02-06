@@ -1,7 +1,7 @@
 import yaml
 import time
-from dazu.CPS import CPSClient  # 假设有一个机器人控制的库
-from software.vision.realsense_camera import RealSenseCamera  # Realsense 相机类
+from hans_robot.CPS import CPSClient  # 假设有一个机器人控制的库
+from software.vision.orbbec_camera import OrbbecCamera  # Realsense 相机类
 from jodell_gripper.RG.rg_api import ClawOperation  # 手爪控制类
 from ultralytics import YOLO  # YOLO 检测库
 import numpy as np
@@ -12,10 +12,10 @@ import threading
 
 
 class RobotController:
-    def __init__(self, box_id=0, rbt_id=0, position_file='./config/position.yaml',
-                 model_path='../runs/obb/train3/weights/best.pt', model_belt_path="../runs/obb/train12/weights/best.pt",
-                 conf_threshold=0.5,
-                 calibration_file='./config/hand_eye_config.yaml'):
+    def __init__(self, box_id=0, rbt_id=0, position_file='../config/position.yaml',
+                 model_path='../config/bottle_head_results/weights/best.pt',
+                 conf_threshold=0.8,
+                 calibration_file='../config/config.yaml'):
         # 初始化参数
         self.box_id = box_id
         self.rbt_id = rbt_id
@@ -36,16 +36,16 @@ class RobotController:
         self.joint = self.read_position("joint")
 
         # 初始化 Realsense 相机
-        self.camera = RealSenseCamera()
+        self.camera = OrbbecCamera(device_id=0)
         # 读取标定信息
         self.calibration_data = self.read_calibration()
         # 初始化手爪控制
-        self.gripper = ClawOperation()
+        self.gripper = ClawOperation(com_port="/dev/ttyUSB0", baud_rate=115200)  # 假设串口设备在 /dev/ttyUSB0
+
         # self.gripper.initialize_gripper()  # 初始化手爪
 
         # 初始化 YOLO 模型
         self.model = YOLO(model_path, task="val")  # 确保使用正确的模型路径和设备
-        self.model_belt = YOLO(model_belt_path, task="val")  # 确保使用正确的模型路径和设备
 
         # 设置置信度阈值
         self.conf_threshold = conf_threshold
@@ -110,33 +110,6 @@ class RobotController:
 
         # 使用 YOLO 进行物体检测
         results = self.model.predict(color_image)
-
-        # 显示结果
-        if show:
-            for item in results:
-                item.show(font_size=1, line_width=2)
-
-        # 假设 results[0].obb.xyxyxyxy 是边界框坐标
-        obb_coordinates = results[0].obb.xyxyxyxy.cpu().numpy()
-
-        # 返回物体的中心坐标
-        return obb_coordinates
-
-    def detect_belt(self, color_image, show=True, conf_threshold=0.6):
-        """
-        使用YOLO进行物体检测并返回物体的中心点。
-
-        参数:
-        show (bool): 如果为True，将显示检测结果图像。
-        conf_threshold (float): YOLO的置信度阈值。
-
-        返回:
-        object_center (tuple): 物体的中心点坐标 (x, y)
-        """
-        # 获取相机帧
-
-        # 使用 YOLO 进行物体检测
-        results = self.model_belt.predict(color_image, conf=conf_threshold)
 
         # 显示结果
         if show:
@@ -280,8 +253,8 @@ class RobotController:
         if self.current_pose[2] < 450:
             print(f"Current height {self.current_pose[2]} is less than 500. Moving to 500...")
             self.client.move_robot(target_pose=[self.current_pose[0], self.current_pose[1], 450, 0, 0, 0])
-        gift_joint_init = self.joint['gift_joint_init']
-        self.client.moveJ_robot(target_joint=gift_joint_init)
+        init_joint = self.joint['init_joint']
+        self.client.moveJ_robot(target_joint=init_joint)
         self.camera.adjust_exposure_based_on_brightness(target_brightness=158)
 
     def execute(self):

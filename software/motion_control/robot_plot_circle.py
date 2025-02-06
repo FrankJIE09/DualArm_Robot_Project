@@ -1,6 +1,6 @@
 import math
 import time
-from dazu.CPS import CPSClient  # Replace with the actual class name containing HRIF_PushServoP
+from hans_robot.CPS import CPSClient  # Replace with the actual class name containing HRIF_PushServoP
 
 
 def draw_circle(boxID, rbtID, center, radius, z_height, num_points=36):
