@@ -3,9 +3,8 @@ import time
 
 from pyorbbecsdk import Context
 
-from elibot.CPS import CPSClient  # 假设有一个机器人控制的库
+from elibot.CPS import CPSClient, desire_left_pose, desire_right_pose  # 假设有一个机器人控制的库
 from software.vision.orbbec_camera import OrbbecCamera  # Realsense 相机类
-from jodell_gripper.RG.rg_api import ClawOperation  # 手爪控制类
 from ultralytics import YOLO  # YOLO 检测库
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -15,18 +14,18 @@ import threading
 
 
 class RobotController:
-    def __init__(self, box_id=0, rbt_id=0, position_file='../config/position.yaml',
-                 model_path='../config/bottle_head_results/weights/best.pt',
+    def __init__(self, position_file='../config/position.yaml',
+                 model_path='../config/all_data_results/weights/best.pt',
                  conf_threshold=0.8,
-                 calibration_file='../config/config.yaml'):
+                 calibration_file='../config/config_left.yaml'):
 
         self.position_file = position_file
         self.calibration_file = calibration_file
-        self.client = CPSClient()
 
-        robot_ip = "192.168.11.8"
-        controller = CPSClient(robot_ip)
-        controller.connect()
+        robot_ip = "192.168.1.201"
+        self.client = CPSClient(robot_ip)
+
+        self.client.connect()
         # 获取当前位置
         self.current_pose = self.client.getTCPPose()  # 读取当前位置
         print(f"Initial Current Pose: {self.current_pose}")
@@ -35,14 +34,11 @@ class RobotController:
         self.positions = self.read_position()
         self.joint = self.read_position("joint")
 
-
         """初始化所有已连接的相机"""
         context = Context()  # 创建一个新的上下文对象
         device_list = context.query_devices()
         print(device_list)
         device_id_list = list(range(len(device_list)))
-        devices = [OrbbecCamera(device_id) for device_id in device_id_list]  # 为每个设备ID创建一个Camera对象
-
         # 初始化 Realsense 相机
         devices = [OrbbecCamera(device_id) for device_id in device_id_list]  # 为每个设备ID创建一个Camera对象
 
@@ -50,18 +46,14 @@ class RobotController:
         # self.camera.start_stream()
         # 读取标定信息
         self.calibration_data = self.read_calibration()
-        # 初始化手爪控制
-        self.gripper = ClawOperation(com_port="/dev/ttyUSB0", baud_rate=115200)  # 假设串口设备在 /dev/ttyUSB0
-        self.gripper.connect()
 
         # 初始化 YOLO 模型
         self.model = YOLO(model_path, task="val")  # 确保使用正确的模型路径和设备
 
         # 设置置信度阈值
         self.conf_threshold = conf_threshold
-        # self.gripper.enable_claw(claw_id=9, enable=True)
 
-        self.gripper.open()
+        self.client.open_gripper()
         self._stop_event = threading.Event()
 
     def read_calibration(self, tag="hand_eye_transformation_matrix"):
@@ -102,7 +94,7 @@ class RobotController:
             f"目标位置（使用depth_image计算）（相机坐标系）：x={real_x}, y={real_y}, z={real_z}°")
         return real_x, real_y, real_z, 0  # 返回目标的实际坐标和旋转角度
 
-    def detect_object(self, color_image, show=False):
+    def detect_object(self, color_image, user_label, show=False):
         """
         使用YOLO进行物体检测并返回物体的中心点。
 
@@ -133,7 +125,7 @@ class RobotController:
 
         # 遍历所有边界框，找到 'bottle_head' 并筛选出置信度最高的
         for idx, label in enumerate(results[0].boxes.cls.cpu().numpy()):
-            if labels.get(int(label)) == 'bottle_head' and confidences[idx] >= 0.9:
+            if labels.get(int(label)) == user_label and confidences[idx] >= self.conf_threshold:
                 if confidences[idx] > max_confidence:
                     max_confidence = confidences[idx]
                     max_confidence_box = boxes[idx]
@@ -142,9 +134,8 @@ class RobotController:
         if max_confidence_box is not None:
             return max_confidence_box
         else:
-            print("没有找到置信度高于0.9的 'bottle_head'。")
+            print("没有找到置信度高于0.8的 'bottle_head'。")
             return None
-
 
     def perform_grab(self, object_center):
         """执行抓取动作"""
@@ -240,30 +231,35 @@ class RobotController:
         T_end_to_finger = create_end_to_finger_matrix()
         aim_base_to_end = base_to_target @ np.linalg.inv(T_end_to_finger)
         aim_pose = transformation_matrix_to_xyzrpy(aim_base_to_end)
+        rpy_angles = desire_left_pose(rpy_array=[0, -120, 0])
+        aim_pose[3:6] = rpy_angles
         pre_grasp_pose = aim_pose.copy()  # 抓取前上方100mm
         grasp_pose = aim_pose.copy()  # 抓取时的高度
         after_grasp_pose = aim_pose.copy()  # 抓取时的高度
-        pre_grasp_pose[2] = 620
-        grasp_pose[2] = 480  # 抓取时的高度
-        after_grasp_pose[2] = 750
 
+        matrix = R.from_euler('xyz', [65, 0, 10], degrees=True).as_matrix()
+        offset = np.array([-40, 0, 20]) @ matrix
+
+        pre_grasp_pose[:3] = pre_grasp_pose[:3] + offset
         # 移动到物体上方100mm
         print("Moving above the object...")
         self.client.move_robot(pre_grasp_pose)
 
-        # 向下移动到抓取高度
+        offset = np.array([-40, 0, -20]) @ matrix
+        grasp_pose[:3] = grasp_pose[:3] + offset
         print("Moving down to grab the object...")
         self.client.move_robot(grasp_pose)
-
         # 控制手爪抓取物体
-        print("Closing gripper to grab the object...")
+        print("Closing 65 pper to grab the object...")
         # self.gripper.set_force(50)  # 设置夹持力
-        self.gripper.run_with_param(claw_id=9, force=255, speed=255, position=0)
+        self.client.run_gripper(target_position=150)
         time.sleep(1)
-
-        # 抓取完成后升高100mm
+        offset = np.array([-40, 0, 100]) @ matrix
+        after_grasp_pose[:3] = after_grasp_pose[:3] + offset
         print("Raising after grab...")
         ret = self.client.move_robot(after_grasp_pose)
+        # 抓取完成后升高100mm
+
         while ret != 0:
             after_grasp_pose[2] = after_grasp_pose[2] - 20
             ret = self.client.move_robot(after_grasp_pose)
@@ -271,26 +267,28 @@ class RobotController:
     def release_object(self):
         """释放物体"""
         print("Opening gripper to release the object...")
-        self.gripper.open()
+        self.client.open_gripper()
 
     def pre_execute(self):
         # if self.current_pose[2] < 450:
         #     print(f"Current height {self.current_pose[2]} is less than 500. Moving to 500...")
         #     self.client.move_robot(target_pose=[self.current_pose[0], self.current_pose[1], 450, 0, 0, 0])
-        init_joint = self.joint['init_joint']
-        self.client.moveByJoint(target_joint=init_joint)
+        left_init_joint = self.joint['left_init_joint']
+        self.client.moveByJoint(target_joint=left_init_joint)
+        left_take_png_joint = self.joint['left_take_png_joint']
+        self.client.moveByJoint(target_joint=left_take_png_joint)
+
         # self.camera.adjust_exposure_based_on_brightness(target_brightness=158)
 
     def execute(self):
         """执行完整的任务流程"""
         # 1. 检查机器人当前高度并调整到500mm以上
-
         # 2. 捕获物体位置
         while True:
             time.sleep(0.1)
             color_image, depth_image, depth_frame = self.camera.get_frames()
             print("Captured frames from RealSense.")
-            detection = self.detect_object(color_image,show=True)
+            detection = self.detect_object(color_image, user_label="labels", show=True)
             if detection is None or detection is [] or detection.shape[0] == 0:
                 print("Object detection failed. Exiting.")
                 return
@@ -301,12 +299,15 @@ class RobotController:
         self.perform_grab(object_center)
 
         # 4. 移动到目标位置并释放物体
-        gift_joint_release = self.joint['gift_joint_release']
-        self.client.moveByJoint(gift_joint_release)
+        left_release_joint = self.joint['left_release_joint']
+        self.client.moveByJoint(left_release_joint)
+        self.client.open_gripper()
+        left_release_joint_above = self.joint['left_release_joint_above']
+        self.client.moveByJoint(left_release_joint_above)
 
 
 def main():
-    controller = RobotController(conf_threshold=0.6)
+    controller = RobotController(conf_threshold=0.7)
     controller.pre_execute()
     # 执行任务
     controller.execute()
