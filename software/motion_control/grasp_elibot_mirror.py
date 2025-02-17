@@ -244,14 +244,14 @@ class RobotController:
         after_grasp_pose = aim_pose.copy()  # 抓取时的高度
 
         matrix = R.from_euler('xyz', [65, 0, 10], degrees=True).as_matrix()
-        offset = np.array([-30, 0, 10]) @ matrix
+        offset = np.array([-30, 0, 0]) @ matrix
 
         pre_grasp_pose[:3] = pre_grasp_pose[:3] + offset
         # 移动到物体上方100mm
         print("Moving above the object...")
         self.client.move_robot(pre_grasp_pose)
 
-        offset = np.array([-60, 0, 10]) @ matrix
+        offset = np.array([-60, 0, 0]) @ matrix
         grasp_pose[:3] = grasp_pose[:3] + offset
         print("Moving down to grab the object...")
         self.client.move_robot(grasp_pose)
@@ -269,7 +269,6 @@ class RobotController:
         while ret != 0:
             after_grasp_pose[2] = after_grasp_pose[2] - 20
             ret = self.client.move_robot(after_grasp_pose)
-
 
     def release_object(self):
         """释放物体"""
@@ -328,10 +327,6 @@ class RobotController:
             object_center = self.calculate_position(detection, depth_frame)
         # 3. 执行抓取动作
         self.perform_grab(object_center)
-        left_callback = self.joint['left_callback']
-        self.client.moveByJoint(left_callback)
-        left_callback_rotate_camera = self.joint['left_callback_rotate_camera']
-        self.client.moveByJoint(left_callback_rotate_camera)
 
         # 4. 移动到目标位置并释放物体
         left_release_joint = self.joint['left_release_joint']
@@ -339,9 +334,6 @@ class RobotController:
         self.client.open_gripper()
         left_release_joint_above = self.joint['left_release_joint_above']
         self.client.moveByJoint(left_release_joint_above)
-
-        left_callback_rotate_camera = self.joint['left_callback_rotate_camera']
-        self.client.moveByJoint(left_callback_rotate_camera)
 
 
 def main():
