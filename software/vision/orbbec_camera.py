@@ -47,9 +47,9 @@ class OrbbecCamera:
 
         self.param = self.pipeline.get_camera_param()
         print(self.param)
-        self.device.set_depth_work_mode("High Accuracy")
+        self.device.set_depth_work_mode("High Density")
         self.set_auto_exposure(True)
-        self.device.set_bool_property(OBPropertyID.OB_PROP_DISPARITY_TO_DEPTH_BOOL,True)
+        self.device.set_bool_property(OBPropertyID.OB_PROP_DISPARITY_TO_DEPTH_BOOL, True)
         self.start_stream()
 
         self.depth_intrinsic = self.param.depth_intrinsic
@@ -65,9 +65,6 @@ class OrbbecCamera:
         self.ppx = self.rgb_intrinsic.cx  # RGB 相机主点 X
         self.ppy = self.rgb_intrinsic.cy  # RGB 相机主点 Y
         self.rgb_distortion = self.param.rgb_distortion  # RGB 相机畸变系数
-
-
-
 
     def get_device_name(self):
         return self.device_info.get_name()
@@ -168,13 +165,40 @@ class OrbbecCamera:
 
     def get_depth_for_color_pixel(self, depth_frame, color_point):
         depth_data = self.depth_frame2depth_data(depth_frame, filter_on=True)
-        return depth_data[color_point[1], color_point[0]]
+        center_x, center_y = color_point
+        center_depth = 0
+        if center_depth == 0:
+            # 如果中心点的深度为0，则查找最近的不为0的深度值
+            found = False
+            search_radius = 1
+            while not found:
+                # 确定搜索范围的边界
+                min_x = max(center_x - search_radius, 0)
+                max_x = min(center_x + search_radius + 1, depth_data.shape[1])  # 使用 depth_frame 的宽度
+                min_y = max(center_y - search_radius, 0)
+                max_y = min(center_y + search_radius + 1, depth_data.shape[0])  # 使用 depth_frame 的高度
+
+                # 遍历搜索范围内的每个像素点
+                for x in range(min_x, max_x):
+                    for y in range(min_y, max_y):
+                        depth = depth_data[y, x]
+                        if depth > 0:
+                            center_depth = depth  # 获取最近的非零深度值
+                            found = True
+                            break
+                    if found:
+                        break
+
+                if not found:
+                    search_radius += 1  # 增加搜索半径
+        return center_depth
 
     def color_frame2color_image(self, color_frame):
         color_image = frame_to_bgr_image(color_frame)
         return color_image
 
     def depth_frame2depth_data(self, depth_frame, filter_on=True):
+
         height = depth_frame.get_height()
         width = depth_frame.get_width()
         scale = depth_frame.get_depth_scale()
@@ -239,6 +263,7 @@ class OrbbecCamera:
                 self.extrinsic_matrix = np.array(transformation_matrix)
         except Exception as e:
             raise RuntimeError(f"加载外参失败: {e}")
+
 
 def initialize_connected_cameras():
     """初始化所有已连接的相机"""

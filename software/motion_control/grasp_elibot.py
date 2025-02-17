@@ -81,8 +81,7 @@ class RobotController:
         # 获取中心点的深度值
         center_depth = self.camera.get_depth_for_color_pixel(depth_frame=depth_frame,
                                                              color_point=[center_x, center_y])
-        print(center_depth)
-        center_depth = center_depth
+        print("center_depth = ", center_depth)
         # 计算实际深度（Z轴）
         real_z = center_depth / 1000
 
@@ -134,7 +133,7 @@ class RobotController:
         if max_confidence_box is not None:
             return max_confidence_box
         else:
-            print("没有找到置信度高于0.8的 'bottle_head'。")
+            print("没有找到置信度高于" + str(self.conf_threshold) + "的" + user_label)
             return None
 
     def perform_grab(self, object_center):
@@ -231,30 +230,30 @@ class RobotController:
         T_end_to_finger = create_end_to_finger_matrix()
         aim_base_to_end = base_to_target @ np.linalg.inv(T_end_to_finger)
         aim_pose = transformation_matrix_to_xyzrpy(aim_base_to_end)
-        rpy_angles = desire_left_pose(rpy_array=[0, -120, 0])
+        rpy_angles = desire_left_pose(rpy_array=[-180, 90, 0])
         aim_pose[3:6] = rpy_angles
         pre_grasp_pose = aim_pose.copy()  # 抓取前上方100mm
         grasp_pose = aim_pose.copy()  # 抓取时的高度
         after_grasp_pose = aim_pose.copy()  # 抓取时的高度
 
         matrix = R.from_euler('xyz', [65, 0, 10], degrees=True).as_matrix()
-        offset = np.array([-40, 0, 20]) @ matrix
+        offset = np.array([-30, 0, 0]) @ matrix
 
         pre_grasp_pose[:3] = pre_grasp_pose[:3] + offset
         # 移动到物体上方100mm
         print("Moving above the object...")
         self.client.move_robot(pre_grasp_pose)
 
-        offset = np.array([-40, 0, -20]) @ matrix
+        offset = np.array([-60, 0, 0]) @ matrix
         grasp_pose[:3] = grasp_pose[:3] + offset
         print("Moving down to grab the object...")
         self.client.move_robot(grasp_pose)
         # 控制手爪抓取物体
-        print("Closing 65 pper to grab the object...")
+        print("Closing 65 per to grab the object...")
         # self.gripper.set_force(50)  # 设置夹持力
         self.client.run_gripper(target_position=150)
         time.sleep(1)
-        offset = np.array([-40, 0, 100]) @ matrix
+        offset = np.array([-30, 0, 50]) @ matrix
         after_grasp_pose[:3] = after_grasp_pose[:3] + offset
         print("Raising after grab...")
         ret = self.client.move_robot(after_grasp_pose)
@@ -270,30 +269,50 @@ class RobotController:
         self.client.open_gripper()
 
     def pre_execute(self):
-        # if self.current_pose[2] < 450:
-        #     print(f"Current height {self.current_pose[2]} is less than 500. Moving to 500...")
-        #     self.client.move_robot(target_pose=[self.current_pose[0], self.current_pose[1], 450, 0, 0, 0])
         left_init_joint = self.joint['left_init_joint']
         self.client.moveByJoint(target_joint=left_init_joint)
         left_take_png_joint = self.joint['left_take_png_joint']
         self.client.moveByJoint(target_joint=left_take_png_joint)
 
-        # self.camera.adjust_exposure_based_on_brightness(target_brightness=158)
+    def execute(self, user_label="crisp"):
+        def flip_detection(detection, image_shape):
+            """
+            对检测框坐标进行镜像翻转。
 
-    def execute(self):
+            :param detection: 输入的检测框坐标数组 [x_min, y_min, x_max, y_max]
+            :param image_shape: 图像的形状 (height, width)
+
+            :return: 翻转后的检测框坐标数组
+            """
+            height, width, _ = image_shape
+
+            x_min, y_min, x_max, y_max = detection
+
+            # 左右翻转：x坐标反向
+            new_x_max = width - x_min
+            new_x_min = width - x_max
+
+            # 上下翻转：y坐标反向
+            new_y_max = height - y_min
+            new_y_min = height - y_max
+
+            return np.array([new_x_min, new_y_min, new_x_max, new_y_max], dtype=np.float32)
+
         """执行完整的任务流程"""
         # 1. 检查机器人当前高度并调整到500mm以上
         # 2. 捕获物体位置
         while True:
             time.sleep(0.1)
             color_image, depth_image, depth_frame = self.camera.get_frames()
+            color_image = np.flipud(np.fliplr(color_image))
             print("Captured frames from RealSense.")
-            detection = self.detect_object(color_image, user_label="labels", show=True)
+            detection = self.detect_object(color_image, user_label=user_label, show=True)
             if detection is None or detection is [] or detection.shape[0] == 0:
                 print("Object detection failed. Exiting.")
-                return
+                continue
             break
-        object_center = self.calculate_position(detection, depth_frame)
+        detection_flipped = flip_detection(detection, color_image.shape)
+        object_center = self.calculate_position(detection_flipped, depth_frame)
 
         # 3. 执行抓取动作
         self.perform_grab(object_center)
@@ -307,7 +326,7 @@ class RobotController:
 
 
 def main():
-    controller = RobotController(conf_threshold=0.7)
+    controller = RobotController(conf_threshold=0.2)
     controller.pre_execute()
     # 执行任务
     controller.execute()

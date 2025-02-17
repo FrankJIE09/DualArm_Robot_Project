@@ -1,25 +1,14 @@
-from scipy.spatial.transform import Rotation as R
-import numpy as np
+import rospy
 
-# 初始 RPY (roll, pitch, yaw)
-rpy_initial = [180.0, 0.0, 20.0]
 
-# 将 RPY 转换为旋转矩阵
-rotation_initial = R.from_euler('xyz', rpy_initial, degrees=True)
+def talker():
+    rospy.init_node('talker', anonymous=True)
+    rospy.loginfo("Hello, ROS!")
+    rospy.spin()
 
-# 绕 X 轴旋转 90 度
-rotation_x_90 = R.from_euler('x', 90, degrees=True)
 
-# 组合旋转
-combined_rotation = rotation_x_90 * rotation_initial
-
-# 获取组合后的旋转矩阵
-rotation_matrix = combined_rotation.as_matrix()
-
-# 获取组合后的欧拉角
-combined_rpy = combined_rotation.as_euler('xyz', degrees=True)
-
-print("Combined Rotation Matrix:")
-print(rotation_matrix)
-print("\nCombined RPY:")
-print(combined_rpy)
+if __name__ == '__main__':
+    try:
+        talker()
+    except rospy.ROSInterruptException:
+        pass
