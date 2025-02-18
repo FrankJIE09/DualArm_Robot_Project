@@ -32,12 +32,8 @@ class RobotController:
 
         # 读取目标位置
         self.positions = self.read_position()
-        self.camera_mirror = False
-
-        if self.camera_mirror:
-            self.joint = self.read_position("joint_mirror")
-        else:
-            self.joint = self.read_position("joint")
+        self.joint = self.read_position("joint")
+        self.labels_height = self.read_position("height")
         """初始化所有已连接的相机"""
         context = Context()  # 创建一个新的上下文对象
         device_list = context.query_devices()
@@ -234,10 +230,8 @@ class RobotController:
         T_end_to_finger = create_end_to_finger_matrix()
         aim_base_to_end = base_to_target @ np.linalg.inv(T_end_to_finger)
         aim_pose = transformation_matrix_to_xyzrpy(aim_base_to_end)
-        if self.camera_mirror:
-            rpy_angles = desire_left_pose(rpy_array=[-180, 90, 0])
-        else:
-            rpy_angles = desire_left_pose(rpy_array=[0, -90,0])
+
+        rpy_angles = desire_left_pose(rpy_array=[0, -90, 0])
         aim_pose[3:6] = rpy_angles
         pre_grasp_pose = aim_pose.copy()  # 抓取前上方100mm
         grasp_pose = aim_pose.copy()  # 抓取时的高度
@@ -270,7 +264,6 @@ class RobotController:
             after_grasp_pose[2] = after_grasp_pose[2] - 20
             ret = self.client.move_robot(after_grasp_pose)
 
-
     def release_object(self):
         """释放物体"""
         print("Opening gripper to release the object...")
@@ -283,49 +276,19 @@ class RobotController:
         self.client.moveByJoint(target_joint=left_take_png_joint)
 
     def execute(self, user_label="skittles"):
-        camera_mirror = self.camera_mirror
-        def flip_detection(detection, image_shape):
-            """
-            对检测框坐标进行镜像翻转。
-
-            :param detection: 输入的检测框坐标数组 [x_min, y_min, x_max, y_max]
-            :param image_shape: 图像的形状 (height, width)
-
-            :return: 翻转后的检测框坐标数组
-            """
-            height, width, _ = image_shape
-
-            x_min, y_min, x_max, y_max = detection
-
-            # 左右翻转：x坐标反向
-            new_x_max = width - x_min
-            new_x_min = width - x_max
-
-            # 上下翻转：y坐标反向
-            new_y_max = height - y_min
-            new_y_min = height - y_max
-
-            return np.array([new_x_min, new_y_min, new_x_max, new_y_max], dtype=np.float32)
-
         """执行完整的任务流程"""
         # 1. 检查机器人当前高度并调整到500mm以上
         # 2. 捕获物体位置
         while True:
             time.sleep(0.1)
             color_image, depth_image, depth_frame = self.camera.get_frames()
-            if camera_mirror:
-                color_image = np.flipud(np.fliplr(color_image))
             print("Captured frames from RealSense.")
             detection = self.detect_object(color_image, user_label=user_label, show=True)
             if detection is None or detection is [] or detection.shape[0] == 0:
                 print("Object detection failed. Exiting.")
                 continue
             break
-        if camera_mirror:
-            detection_flipped = flip_detection(detection, color_image.shape)
-            object_center = self.calculate_position(detection_flipped, depth_frame)
-        else:
-            object_center = self.calculate_position(detection, depth_frame)
+        object_center = self.calculate_position(detection, depth_frame)
         # 3. 执行抓取动作
         self.perform_grab(object_center)
         left_callback = self.joint['left_callback']
@@ -334,11 +297,17 @@ class RobotController:
         self.client.moveByJoint(left_callback_rotate_camera)
 
         # 4. 移动到目标位置并释放物体
-        left_release_joint = self.joint['left_release_joint']
-        self.client.moveByJoint(left_release_joint)
+        left_release_position= self.joint['left_release_position']
+        labels_height = self.labels_height[user_label]
+        matrix = R.from_euler('xyz', [65, 0, 10], degrees=True).as_matrix()
+        offset = np.array([0, 0, labels_height]) @ matrix
+        left_release_position[:3] = left_release_position[:3] + offset
+        exit()
+        self.client.move_robot(left_release_position)
         self.client.open_gripper()
-        left_release_joint_above = self.joint['left_release_joint_above']
-        self.client.moveByJoint(left_release_joint_above)
+
+        # left_release_joint_above = self.joint['left_release_joint_above']
+        # self.client.moveByJoint(left_release_joint_above)
 
         left_callback_rotate_camera = self.joint['left_callback_rotate_camera']
         self.client.moveByJoint(left_callback_rotate_camera)
