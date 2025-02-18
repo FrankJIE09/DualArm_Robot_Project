@@ -26,6 +26,12 @@ joint_mirror:
   right_get_joint: [-27.08, -105.52, -84.05, -101.87, -72.81, -121.31]
 
 height:
-  skittles: 10
+  skittles: 0
 
+slam_point_id:
+  point1: ee432faf-fe38-4963-a385-824705a47f06
+  point2: 898ff024-46d2-49ea-bfce-91f3a18ce7a2
+  point3: 528243d9-ce29-4af3-a4fd-89386b670f7c
+  point4: bee638cc-af08-41ce-8295-c8b8584e5473
+  point5: 2ae451bc-81ba-4897-9d22-9f7439261558
 
